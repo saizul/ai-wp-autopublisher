@@ -1,4 +1,3 @@
-console.log("Posting to:", `${process.env.WP_URL}/wp-json/wp/v2/posts`);
 
 
 import axios from "axios";
