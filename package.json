@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node autopublish.js",
     "dry-run": "node autopublish.js --dry-run",
-    "test": "node --test test/"
+    "test": "node --test test/*.test.js"
   },
   "keywords": [],
   "author": "",
