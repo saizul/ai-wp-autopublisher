@@ -1,4 +1,5 @@
 const REQUIRED = ["OPENAI_API_KEY", "WP_URL", "WP_USERNAME", "WP_APP_PASSWORD"];
+export const POST_STATUSES = ["publish", "draft", "pending", "private"];
 
 /**
  * Validate environment variables and return a normalised config.
@@ -28,6 +29,14 @@ export function loadConfig(env = process.env, { dryRun = false } = {}) {
     }
   }
 
+  const postStatus = (env.WP_POST_STATUS || "publish").trim().toLowerCase();
+  if (!POST_STATUSES.includes(postStatus)) {
+    problems.push(`WP_POST_STATUS must be one of ${POST_STATUSES.join(", ")} (got "${env.WP_POST_STATUS}")`);
+  }
+
+  const stateFile = (env.STATE_FILE || ".autopublish-state.json").trim();
+  if (!stateFile) problems.push("STATE_FILE must not be empty");
+
   if (problems.length) {
     throw new Error(
       `Invalid configuration:\n${problems.map((p) => `  - ${p}`).join("\n")}\n` +
@@ -41,6 +50,8 @@ export function loadConfig(env = process.env, { dryRun = false } = {}) {
     wpUsername: env.WP_USERNAME,
     wpAppPassword: env.WP_APP_PASSWORD,
     postsPerRun,
+    postStatus,
+    stateFile,
   };
 }
 
