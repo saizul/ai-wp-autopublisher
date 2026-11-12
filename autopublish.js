@@ -1,19 +1,27 @@
 import dotenv from "dotenv";
 import fs from "fs";
 import csv from "csv-parser";
-import { loadConfig, parseArgs, selectKeywords } from "./config.js";
+import { loadConfig, parseArgs } from "./config.js";
+import { PublishState, slugify } from "./state.js";
+import { pendingKeywords, runBatch } from "./runner.js";
 
 dotenv.config();
 
 const KEYWORDS_FILE = fs.existsSync("Keywords.csv") ? "Keywords.csv" : "keywords.csv";
 const { dryRun } = parseArgs(process.argv.slice(2));
 
+function fail(message) {
+  console.error(message);
+  process.exit(1);
+}
+
 let config;
+let state;
 try {
   config = loadConfig(process.env, { dryRun });
+  state = PublishState.load(config.stateFile);
 } catch (err) {
-  console.error(err.message);
-  process.exit(1);
+  fail(err.message);
 }
 
 const keywords = [];
@@ -22,28 +30,37 @@ fs.createReadStream(KEYWORDS_FILE)
   // The sample CSV uses a "Keyword" header; accept any casing.
   .pipe(csv({ mapHeaders: ({ header }) => header.trim().toLowerCase() }))
   .on("data", (row) => keywords.push(row.keyword))
-  .on("error", (err) => {
-    console.error(`Could not read ${KEYWORDS_FILE}: ${err.message}`);
-    process.exit(1);
-  })
+  .on("error", (err) => fail(`Could not read ${KEYWORDS_FILE}: ${err.message}`))
   .on("end", async () => {
-    const batch = selectKeywords(keywords, config.postsPerRun);
+    const batch = pendingKeywords(keywords, state, config.postsPerRun);
     if (!batch.length) {
-      console.error(`No keywords found in ${KEYWORDS_FILE}.`);
-      process.exit(1);
+      fail(
+        state.size
+          ? `All keywords in ${KEYWORDS_FILE} are already published (see ${config.stateFile}).`
+          : `No keywords found in ${KEYWORDS_FILE}.`
+      );
     }
 
     if (dryRun) {
-      console.log(`[dry-run] Would generate and publish ${batch.length} post(s) to ${config.wpUrl || "(WP_URL unset)"}:`);
-      batch.forEach((k, i) => console.log(`  ${i + 1}. ${k}`));
+      console.log(
+        `[dry-run] Would generate ${batch.length} post(s) as "${config.postStatus}" on ` +
+          `${config.wpUrl || "(WP_URL unset)"} (${state.size} keyword(s) already done):`
+      );
+      batch.forEach((k, i) => console.log(`  ${i + 1}. ${k}  ->  /${slugify(k)}/`));
       return;
     }
 
     const { generateArticle } = await import("./generateArticle.js");
-    const { publishPost } = await import("./publishToWP.js");
-    for (const keyword of batch) {
-      const content = await generateArticle(keyword);
-      await publishPost(keyword, content);
-      console.log("Published:", keyword);
-    }
+    const { createWpClient } = await import("./publishToWP.js");
+    const result = await runBatch(batch, {
+      generate: generateArticle,
+      wp: createWpClient(config),
+      state,
+      status: config.postStatus,
+    });
+    console.log(
+      `\n${result.published.length} published, ${result.skipped.length} skipped (already on site), ` +
+        `${result.failed.length} failed`
+    );
+    if (result.failed.length) process.exitCode = 1;
   });

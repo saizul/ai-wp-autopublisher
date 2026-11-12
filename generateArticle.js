@@ -14,6 +14,8 @@ Write a human-like, SEO-optimized article.
 Keyword: "${keyword}"
 
 Rules:
+- Return Markdown only
+- Start with one H1 line ("# Title") that reads naturally and contains the keyword
 - 1500+ words
 - Unique intro
 - Use H2 & H3
@@ -23,9 +25,11 @@ Rules:
 `;
 
   const response = await openai.chat.completions.create({
-    model: "gpt-4.1-mini",
+    model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
     messages: [{ role: "user", content: prompt }],
   });
 
-  return response.choices[0].message.content;
+  const content = response.choices?.[0]?.message?.content;
+  if (!content || !content.trim()) throw new Error("OpenAI returned an empty article");
+  return content;
 }
